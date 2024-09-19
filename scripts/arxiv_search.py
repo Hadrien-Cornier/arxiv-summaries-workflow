@@ -1,254 +1,97 @@
- import arxiv
-import time
-from datetime import datetime, timedelta
-import textwrap
-import tkinter as tk
-from tkinter import ttk
-import requests
-from threading import Thread, Event
-from config import restrict_to_most_recent, max_results, categories
+import argparse
+import arxiv
 import os
-import re
 import csv
+import re
+import requests
+from datetime import datetime, timedelta
+from configparser import ConfigParser
 
-
-if not os.path.exists("pdfs"):
-    os.makedirs("pdfs")
-
-# Python function to read words from a text file and store each line as a string in a list.
 def read_lines_from_file(filename):
-    """
-    Read lines from a text file and store them as strings in a list.
-    
-    Parameters:
-    - filename (str): The name of the text file to read from.
-    
-    Returns:
-    - List[str]: A list containing each line from the text file as a string.
-    """
     lines = []
     try:
         with open(filename, 'r') as file:
             for line in file:
-                lines.append(line.strip())  # Remove leading/trailing whitespace
+                lines.append(line.strip())
     except FileNotFoundError:
-        print("File not found: {filename}.")
+        print(f"File not found: {filename}.")
     except Exception as e:
         print(f"An error occurred: {e}")
-    
     return lines
 
+def compute_relevance_score(title, abstract, include_terms):
+    score = 0
+    for term in include_terms:
+        if term.lower() in title.lower():
+            score += 2  # Higher weight for title matches
+        if term.lower() in abstract.lower():
+            score += 1
+    return score
 
+def search_papers(input_dir, output_dir, config):
+    restrict_to_most_recent = config.getboolean('restrict_to_most_recent')
+    max_results = config.getint('max_results')
+    categories = config.get('categories')
+    date_range = config.getint('date_range')
+    include_terms = read_lines_from_file(config.get('tags_file'))
+    exclude_terms = read_lines_from_file(config.get('search_terms_exclude_file'))
 
-# Most Recent Days Checker. Sometimes arxiv posts papers w multiple dates on one day so we really just want to make sure we're checking whatever came out since we last queried
-with open('most_recent_day_searched.txt', 'r') as file:
-    most_recent = file.read()
-print(f'most recent day searched: {most_recent}')
-try:
-    most_recent_check = datetime.strptime(most_recent, '%Y-%m-%d').date()
-except ValueError:
-    most_recent_check = datetime.now().date() - timedelta(days=2)
+    start_date = datetime.now() - timedelta(days=date_range)
+    query = f"({categories}) AND submittedDate:[{start_date.strftime('%Y%m%d')} TO {datetime.now().strftime('%Y%m%d')}]"
 
-    with open('most_recent_day_searched.txt', 'w') as file:
-            file.write(most_recent_check.strftime('%Y-%m-%d'))
+    client = arxiv.Client(
+        page_size=max_results,
+        delay_seconds=5.0,
+        num_retries=3
+    )
 
-    print("No date listed in most_recent_day_searched.txt. Two days ago's date inserted, but arXiv frequently publishes papers with older dates on a given day (yes it's confusing) so you may want to edit the text file to an even earlier date. If today is a weekend then the script may return nothing.")
+    search = arxiv.Search(
+        query=query,
+        max_results=max_results,
+        sort_by=arxiv.SortCriterion.SubmittedDate,
+        sort_order=arxiv.SortOrder.Descending
+    )
 
+    papers = []
+    for result in client.results(search):
+        if restrict_to_most_recent and (result.published.date() <= start_date.date()):
+            with open(os.path.join(output_dir, 'most_recent_day_searched.txt'), 'w') as file:
+                file.write(result.published.date().strftime('%Y-%m-%d'))
+            break
+        score = compute_relevance_score(result.title, result.summary, include_terms)
+        papers.append({
+            "id": result.get_short_id(),
+            "title": result.title,
+            "arxiv_url": result.entry_id,
+            "pdf_url": result.pdf_url,
+            "published_date": result.published.date(),
+            "abstract": result.summary,
+            "score": score
+        })
 
+    # Sort papers by relevance score
+    papers.sort(key=lambda x: x['score'], reverse=True)
 
-# search terms
-include_terms = read_lines_from_file("search_terms_include.txt")
-exclude_terms = read_lines_from_file("search_terms_exclude.txt")
-
-include, exclude = 'all:"', 'all:"'
-for term in include_terms: 
-    include += term + '" OR all:"'
-for term in exclude_terms: 
-    exclude += term + '" OR all:"'
-include = include[:-9]
-exclude = exclude[:-9]
-print("\nIncluded Terms:\n", include)
-print("\nExcluded Terms:\n", exclude)
- 
-if len(include_terms) > 0 & len(exclude_terms) > 0:
-    query = f'({categories}) AND ({include}) ANDNOT ({exclude})'
-elif len(include_terms) > 0:
-    query = f'({categories}) AND ({include})'
-elif len(exclude_terms) > 0:
-    query = f'({categories}) ANDNOT ({exclude})'
-else:
-    query = categories
-print("\nQuery:\n", query)
-
-
-client = arxiv.Client(
-  page_size = 1,
-  delay_seconds = 5.0,
-  num_retries = 50
-)
-# Define the search parameters
-search = arxiv.Search(
-    query = query,
-    max_results=max_results,  
-    sort_by=arxiv.SortCriterion.SubmittedDate,  # Sort by submission date
-    sort_order=arxiv.SortOrder.Descending  # In descending order, so the most recent articles come first
-)
-
-results = client.results(search)
-papers = []
-
-
-def safe_iterator(iterable):
-    it = iter(iterable)  # Get an iterator object from the iterable
-    while True:
-        try:
-            yield next(it)  # Yield the next item from the iterator
-        except StopIteration:
-            print("got to StopIteration")
-            break  # StopIteration means there are no more items
-        except Exception as e:
-            # Handle the exception or simply pass to skip to the next item
-            pass
-
-
-i = 0
-for result in safe_iterator(results):
-
-    if i == 0:
-        new_most_recent = result.published.date()#.strftime('%Y-%m-%d')
-    
-    if restrict_to_most_recent & (result.published.date() <= most_recent_check):
-        print(f"GOT TO MOST RECENT DATE RESET: {result.published.date()} <= {most_recent_check}")
-        # Write new_most_recent to .txt file
-        # we only want to do that here bc if restrict_to_most_recent=False then we don't want to change the value
-        with open('most_recent_day_searched.txt', 'w') as file:
-            file.write(new_most_recent.strftime('%Y-%m-%d'))
-
-        # In case you need to run it back
-        print(f"If you need to run back the most recent check, then edit the date in most_recent_day_searched.txt to be '{most_recent_check.strftime('%Y-%m-%d')}'.")
-
-        # bc we've hit files we likely already downloaded before we'll end here
-        break
-    
-    try:
-        papers.append({"i": i, "title": result.title, "url": result.pdf_url, "published_date": result.published.date()})
-        print(f'{result.title}\nPublish date: {result.published.date()}, PDF URL: {result.pdf_url}')
-        #print(result.categories)
-        #print('Abstract: ', textwrap.fill(result.summary, width=220))
-        #print('DOI ', result.doi)
-        print()
-    except UnexpectedEmptyPageError:
-        continue
-    
-    #print('\n')
-
-    # Sleep for 5 seconds to avoid overloading the server
-    time.sleep(5)
-    i += 1
-
-print(f"Total papers: {i}")
-
-# Initialize CSV files with headers if they don't exist
-csv_file_seen = "papers_seen.csv"
-if not os.path.isfile(csv_file_seen):
-    with open(csv_file_seen, mode='w', newline='') as file:
+    # Write the papers to a CSV for later processing
+    os.makedirs(output_dir, exist_ok=True)
+    with open(os.path.join(output_dir, 'papers_found.csv'), mode='w', newline='', encoding='utf-8') as file:
         writer = csv.writer(file)
-        writer.writerow(["Title", "ArXiv Link", "Paper Date", "Date Added"])
-csv_file_downloaded = "papers_downloaded.csv"
-if not os.path.isfile(csv_file_downloaded):
-    with open(csv_file_downloaded, mode='w', newline='') as file:
-        writer = csv.writer(file)
-        writer.writerow(["Title", "ArXiv Link", "Paper Date", "Date Added"])
+        writer.writerow(["ID", "Title", "ArXiv URL", "PDF URL", "Published Date", "Score"])
+        for paper in papers:
+            writer.writerow([
+                paper['id'], paper['title'], paper['arxiv_url'],
+                paper['pdf_url'], paper['published_date'], paper['score']
+            ])
 
+    print(f"Found {len(papers)} papers.")
 
-# Function to download PDF from arXiv
-def download_pdf(url, filename, event):
-    response = requests.get(url)
-    with open(filename, "wb") as f:
-        f.write(response.content)
-    event.set()
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Search arXiv papers.")
+    parser.add_argument('--input', required=True, help='Input directory')
+    parser.add_argument('--output', required=True, help='Output directory')
+    args = parser.parse_args()
 
-def on_button_click(url, filename):
-    arxiv_id = re.sub(r'v\d+$', '', url.split('/')[-1])
-    arxiv_url = f"https://arxiv.org/abs/{arxiv_id}"
-    #arxiv_id_no_version = arxiv_id.split('v')[0]
-    #bytez_url = f"https://bytez.com/docs/arxiv/{arxiv_id_no_version}/paper"
-    line = f'{filename[5:-4]} | {arxiv_url}'# | {bytez_url}
+    config = ConfigParser()
+    config.read('config/config.ini')
 
-    # Duplicate check:
-    try:
-        with open('links.txt', 'r') as file:
-            existing_lines = file.readlines()
-            if any(l.strip() == line for l in existing_lines):
-                print(f'Line already exists in chapters.txt - Skipping')
-                return  # Skip if the URL already exists
-    except FileNotFoundError:
-        pass  # Ignore if the file doesn't exist yet
-
-    # Write the title & URL to a text file
-    with open('links.txt', 'a') as file:
-        file.write(line + '\n')
-    
-    # Write to papers_downloaded.csv
-    today_date = datetime.now().strftime('%Y-%m-%d')
-    with open(csv_file_downloaded, mode='a', newline='') as file:
-        writer = csv.writer(file)
-        writer.writerow([filename[5:-4], arxiv_url, new_most_recent, today_date])
-
-    # Download the PDF in a new thread
-    event = Event()
-    thread = Thread(target=download_pdf, args=(url, filename, event))
-    thread.daemon = True  # Ensure the thread exits when the main program exits
-    thread.start()
-
-    def check_thread():
-        if event.is_set():
-            button.config(state=tk.NORMAL)
-        else:
-            root.after(100, check_thread)
-
-    button.config(state=tk.DISABLED)
-    check_thread()
-
-# Create the main window
-root = tk.Tk()
-root.title("arXiv Paper Downloader")
-
-# Create a canvas and a vertical scrollbar
-canvas = tk.Canvas(root)
-scrollbar = ttk.Scrollbar(root, orient="vertical", command=canvas.yview)
-frame = ttk.Frame(canvas)
-
-# Configure canvas and add the frame to it
-canvas.create_window((0, 0), window=frame, anchor="nw")
-canvas.configure(yscrollcommand=scrollbar.set)
-
-today_date = datetime.now().strftime('%Y-%m-%d')
-for i, paper in enumerate(papers):
-    # Write to CSV
-    arxiv_id = re.sub(r'v\d+$', '', paper['url'].split('/')[-1])
-    arxiv_url = f"https://arxiv.org/abs/{arxiv_id}"
-    with open(csv_file_seen, mode='a', newline='') as file:
-        writer = csv.writer(file)
-        writer.writerow([paper['title'].replace(":", " -"), arxiv_url, paper['published_date'], today_date])
-
-    button = ttk.Button(
-        frame, 
-        text=f"{paper['i']}: {paper['title']}", 
-        command=lambda url=paper['url'], 
-        fn=f"pdfs/{paper['title']}.pdf".replace(":", " -"): on_button_click(url, fn))
-    button.grid(row=i, column=1)
-
-# Update frame size and set canvas scroll region
-frame.update_idletasks()
-canvas.config(scrollregion=canvas.bbox("all"))
-
-# Place canvas and scrollbar in the GUI
-canvas.grid(row=0, column=0, sticky="nsew")
-scrollbar.grid(row=0, column=1, sticky="ns")
-
-# Enable resizing
-root.grid_rowconfigure(0, weight=1)
-root.grid_columnconfigure(0, weight=1)
-
-root.mainloop()
+    search_papers(args.input, args.output, config['Configurations'])

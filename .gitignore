@@ -7,3 +7,4 @@ data/audio_files
 venv/
 config/
 !config/.gitkeep
+scripts/__pycache__

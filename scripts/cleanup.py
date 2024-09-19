@@ -1,8 +1,8 @@
- import os
+import os
 import shutil
 import glob
 import csv
-from config import obsidian_vault_location, obsidian_vault_attachments_location, frontmatter_lines, send_to_obsidian
+from config.config import obsidian_vault_location, obsidian_vault_attachments_location, frontmatter_lines, send_to_obsidian
 
 def make_folder_if_none(path):  
     if not os.path.exists(path):
