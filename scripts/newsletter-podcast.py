@@ -1,6 +1,6 @@
 from openai import OpenAI
 import PyPDF2
-from config import prompts
+from config.config import prompts
 from time import sleep
 from datetime import datetime
 import os
@@ -123,11 +123,7 @@ if __name__ == '__main__':
 
     # Write the message
     with open('newsletter.txt', 'a') as outfile:
-        outfile.write(f"{summaries}\n\n\n\nThanks for reading/listening, that's all for this week."
-                      f"\nPlease consider checking out Tunadorable's youtube channel where he provides commentary on the above papers."
-                      f"\nhttps://youtube.com/@Tunadorable"
-                      f"\n\nHere is the most up-to-date version of the python scripts I currently use to create this newsletter:"
-                      f"\nhttps://github.com/evintunador/arxiv-summaries-workflow")
+        outfile.write(f"{summaries}")
     
     ### now for the podcast
     # Path for saving individual MP3 files

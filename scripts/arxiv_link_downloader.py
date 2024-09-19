@@ -27,8 +27,8 @@ def add_to_links_file(title, arxiv_url):
     print(f"Added to links.txt: {line}")
 
 def add_to_csv_file(title, arxiv_url, published_date):
-    csv_file_seen = "papers_seen.csv"
-    csv_file_downloaded = "papers_downloaded.csv"
+    csv_file_seen = "data/papers_seen.csv"
+    csv_file_downloaded = "data/papers_downloaded.csv"
     today_date = datetime.now().strftime('%Y-%m-%d')
     
     # Initialize CSV file with headers if it doesn't exist
@@ -60,7 +60,7 @@ def process_arxiv_url(arxiv_url):
     # Create a valid filename from the paper title
     safe_title = re.sub(r'[<>:"/\\|?*]', ' -', paper.title)  # Replace invalid filename characters
     filename = f"{safe_title}.pdf"
-    filepath = os.path.join("pdfs", filename)
+    filepath = os.path.join("data/pdfs", filename)
 
     # Download the PDF
     download_pdf(paper.pdf_url, filepath)
@@ -73,17 +73,14 @@ def process_arxiv_url(arxiv_url):
     add_to_csv_file(safe_title, arxiv_url, paper.published.date())
 
 def main(arxiv_urls):
-    if not os.path.exists("pdfs"):
-        os.makedirs("pdfs")
+    if not os.path.exists("data/pdfs"):
+        os.makedirs("data/pdfs")
 
     for arxiv_url in arxiv_urls:
         process_arxiv_url(arxiv_url)
 
 if __name__ == "__main__":
     if len(sys.argv) < 2:
-        print("Usage: python download_arxiv.py <arxiv_url_1> <arxiv_url_2> ... <arxiv_url_n>")
+        print("Usage: python arxiv_link_downloader.py <arxiv_url_1> <arxiv_url_2> ... <arxiv_url_n>")
     else:
         main(sys.argv[1:])
-
-
-

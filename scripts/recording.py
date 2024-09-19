@@ -3,7 +3,7 @@ import time
 import re
 from pynput import keyboard
 import os
-from config import hotkey, replacements
+from config.config import hotkey, replacements
 
 # File paths
 links_file = 'links.txt'

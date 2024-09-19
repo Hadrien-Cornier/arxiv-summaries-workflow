@@ -5,3 +5,5 @@ data/audio_files
 !data/pdfs-to-summarize/.gitkeep
 !data/audio_files/.gitkeep
 venv/
+config/
+!config/.gitkeep
