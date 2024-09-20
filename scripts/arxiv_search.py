@@ -1,37 +1,28 @@
-import argparse
+import configparser
 import arxiv
 import os
 import csv
 from datetime import datetime, timedelta
-from configparser import ConfigParser
 from typing import List, Dict, Any
-from utils import read_lines_from_file
+from utils.utils import read_lines_from_file
 
 def compute_relevance_score(title: str, abstract: str, include_terms: List[str]) -> int:
     """Compute relevance score based on term occurrences in title and abstract."""
     return sum(2 if term.lower() in title.lower() else 1 if term.lower() in abstract.lower() else 0 for term in include_terms)
 
-def search_papers(input_dir: str, output_dir: str, config: ConfigParser) -> None:
-    """
-    Search for papers on arXiv based on given configuration.
+def search_papers(output_dir: str, config: configparser.ConfigParser) -> None:
+    """Search for papers on arXiv based on given configuration."""
+    arxiv_config = config['arxiv_search']
     
-    Args:
-    input_dir (str): Directory containing input files.
-    output_dir (str): Directory to save output files.
-    config (ConfigParser): Configuration object with search parameters.
-    """
-    # Load configuration
-    restrict_to_most_recent: bool = config.getboolean('restrict_to_most_recent')
-    max_results: int = config.getint('max_results')
-    categories: str = config.get('categories')
-    date_range: int = config.getint('date_range')
-    include_terms: List[str] = read_lines_from_file(config.get('tags_file'))
+    restrict_to_most_recent: bool = arxiv_config.getboolean('restrict_to_most_recent')
+    max_results: int = arxiv_config.getint('max_results')
+    categories: str = arxiv_config.get('categories')
+    date_range: int = arxiv_config.getint('date_range')
+    include_terms: List[str] = read_lines_from_file(arxiv_config.get('tags_file'))
 
-    # Prepare search query
     start_date: datetime = datetime.now() - timedelta(days=date_range)
     query: str = f"({categories}) AND submittedDate:[{start_date.strftime('%Y%m%d')} TO {datetime.now().strftime('%Y%m%d')}]"
 
-    # Set up arXiv client and search
     client: arxiv.Client = arxiv.Client(page_size=max_results, delay_seconds=5.0, num_retries=3)
     search: arxiv.Search = arxiv.Search(
         query=query,
@@ -40,7 +31,6 @@ def search_papers(input_dir: str, output_dir: str, config: ConfigParser) -> None
         sort_order=arxiv.SortOrder.Descending
     )
 
-    # Perform search and process results
     papers: List[Dict[str, Any]] = []
     for result in client.results(search):
         if restrict_to_most_recent and (result.published.date() <= start_date.date()):
@@ -58,10 +48,8 @@ def search_papers(input_dir: str, output_dir: str, config: ConfigParser) -> None
             "score": score
         })
 
-    # Sort papers by relevance score
     papers.sort(key=lambda x: x['score'], reverse=True)
 
-    # Write results to CSV
     os.makedirs(output_dir, exist_ok=True)
     with open(os.path.join(output_dir, 'papers_found.csv'), mode='w', newline='', encoding='utf-8') as file:
         writer = csv.writer(file)
@@ -69,15 +57,6 @@ def search_papers(input_dir: str, output_dir: str, config: ConfigParser) -> None
         for paper in papers:
             writer.writerow([paper[key] for key in ["id", "title", "arxiv_url", "pdf_url", "published_date", "score"]])
 
-    print(f"Found {len(papers)} papers.")
-
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Search arXiv papers.")
-    parser.add_argument('--input', required=True, help='Input directory')
-    parser.add_argument('--output', required=True, help='Output directory')
-    args = parser.parse_args()
-
-    config = ConfigParser()
-    config.read('config/config.ini')
-
-    search_papers(args.input, args.output, config['Configurations'])
+    print(f"Found {len(papers)} papers:")
+    for paper in papers:
+        print(f"- {paper['title']}")

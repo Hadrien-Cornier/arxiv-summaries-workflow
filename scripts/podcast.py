@@ -5,9 +5,9 @@ from pathlib import Path
 from pydub import AudioSegment
 import configparser
 from typing import List
-from utils import open_file, cut_off_string
+from utils.utils import open_file, cut_off_string, resolve_config
 
-def generate_podcast(newsletter_text_location: str, audio_files_path: str) -> None:
+def generate_podcast(newsletter_text_location: str, audio_files_path: str, config: configparser.ConfigParser) -> None:
     """Generate a podcast from newsletter text content."""
     newsletter_content: str = open_file(newsletter_text_location).strip()
     audio_files_path: Path = Path(audio_files_path)
@@ -66,10 +66,9 @@ def cleanup_segment_files(segment_files: List[Path]) -> None:
         os.remove(segment_file)
 
 if __name__ == '__main__':
-    config: configparser.ConfigParser = configparser.ConfigParser()
-    config.read('config/config.ini')
+    config: configparser.ConfigParser = resolve_config()
     
     newsletter_text_location: str = config['podcast']['newsletter_text_location']
     audio_files_path: str = config['podcast']['audio_files_directory_path']
     
-    generate_podcast(newsletter_text_location, audio_files_path)
+    generate_podcast(newsletter_text_location, audio_files_path, config)

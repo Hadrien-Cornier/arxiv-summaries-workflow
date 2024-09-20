@@ -1,11 +1,19 @@
 import os
 import csv
 import configparser
-from typing import List, Dict, Any, Tuple, Optional
+from typing import List, Dict, Any, Tuple
+import PyPDF2
 
 # Initialize configuration
-config: configparser.ConfigParser = configparser.ConfigParser()
-config.read('config/config.ini')
+def resolve_config() -> configparser.ConfigParser:
+    config: configparser.ConfigParser = configparser.ConfigParser()
+    project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+    config_path = os.path.join(project_root, 'config', 'config.ini')
+    if os.path.exists(config_path):
+        config.read(config_path)
+    else:
+        raise FileNotFoundError(f"Config file not found at {config_path}")
+    return config
 
 # File Operations
 def save_file(filepath: str, content: str) -> None:
@@ -49,9 +57,8 @@ def extract_text_from_pdf(pdf_path: str) -> str:
         return ''
 
 # CSV Operations
-def get_link(base_filename: str) -> str:
+def get_link(base_filename: str, csv_path: str) -> str:
     """Get ArXiv URL for a given base filename from CSV."""
-    csv_path: str = config.get('utils', 'csv_path', fallback='data/papers_to_summarize.csv')
     with open(csv_path, mode='r', newline='') as file:
         reader: csv.DictReader = csv.DictReader(file)
         for row in reader:

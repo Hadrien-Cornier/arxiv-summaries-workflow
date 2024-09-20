@@ -1,1 +1,0 @@
-Windows Agent Arena - Evaluating Multi-Modal OS Agents at Scale | https://arxiv.org/abs/2409.08264

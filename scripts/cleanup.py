@@ -2,18 +2,7 @@ import os
 import shutil
 import glob
 import csv
-from typing import List, Optional
-from configparser import ConfigParser
-from utils import make_folder_if_none, delete_all_files_in_folder, read_lines_from_file, get_link
-
-# Read configuration
-config = ConfigParser()
-config.read('config/config.ini')
-
-obsidian_vault_location = config.get('Obsidian', 'vault_location')
-obsidian_vault_attachments_location = config.get('Obsidian', 'vault_attachments_location')
-frontmatter_lines = config.get('Markdown', 'frontmatter_lines')
-send_to_obsidian = config.getboolean('Obsidian', 'send_to_obsidian')
+from utils.utils import make_folder_if_none, delete_all_files_in_folder, get_link
 
 make_folder_if_none("pdfs-to-summarize")
 
@@ -43,7 +32,7 @@ def process_files(pdf_folder: str, md_final_folder: str, pdf_final_folder: str) 
         base_filename = os.path.basename(pdf_file).rsplit('.', 1)[0]
         link = get_link(base_filename)
         
-        md_content = f"{frontmatter_lines}\n{'Link: [' + link + '](' + link + ')' if link else ''}\n\n![[{base_filename}.pdf]]"
+        md_content = f"{'Link: [' + link + '](' + link + ')' if link else ''}\n\n![[{base_filename}.pdf]]"
         md_file = os.path.join('pdfs-to-summarize', base_filename.title() + ' (pdf).md')
         
         with open(md_file, 'w') as f_out:
@@ -71,7 +60,11 @@ def cleanup_files() -> None:
         except Exception as e:
             print(f"Couldn't delete {file} due to error: {e}")
 
-if send_to_obsidian:
-    process_files('pdfs-to-summarize', obsidian_vault_location, obsidian_vault_attachments_location)
+def cleanup_and_send_to_obsidian(config):
+    send_to_obsidian = config.getboolean('Obsidian', 'send_to_obsidian')
+    if send_to_obsidian:
+        obsidian_vault_location = config.get('Obsidian', 'vault_location')
+        obsidian_vault_attachments_location = config.get('Obsidian', 'vault_attachments_location')
+        process_files('pdfs-to-summarize', obsidian_vault_location, obsidian_vault_attachments_location)
 
-cleanup_files()
+    cleanup_files(config)
